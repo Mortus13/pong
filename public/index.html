@@ -1,0 +1,190 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Pong Game</title>
+    <style>
+      body {
+        margin: 0;
+        background: #000;
+        overflow: hidden;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        font-family: 'Press Start 2P', cursive;
+      }
+      #gameContainer {
+        position: relative;
+        text-align: center;
+      }
+      canvas {
+        display: block;
+        margin: 0 auto;
+        background: #000;
+        border: 2px solid #333;
+      }
+      #score {
+        color: #fff;
+        font-size: 24px;
+        margin: 20px 0;
+        text-shadow: 0 0 10px #fff;
+      }
+    </style>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="gameContainer">
+      <div id="score">0 : 0</div>
+      <canvas id="gameCanvas"></canvas>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      // Конфигурация игры
+      const CANVAS_WIDTH = 800;
+      const CANVAS_HEIGHT = 600;
+      const PADDLE_HEIGHT = 100;
+      const PADDLE_WIDTH = 15;
+      const BALL_RADIUS = 10;
+
+      // Инициализация элементов
+      const canvas = document.getElementById('gameCanvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = CANVAS_WIDTH;
+      canvas.height = CANVAS_HEIGHT;
+
+      // Состояние игры
+      let playerSide = null;
+      let playerPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
+      let opponentPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
+      let ball = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
+      let score = { player: 0, opponent: 0 };
+
+      // Физика управления
+      let keys = { ArrowUp: false, ArrowDown: false };
+      let paddleVelocity = 0;
+      const ACCELERATION = 0.5;
+      const FRICTION = 0.9;
+      const MAX_SPEED = 8;
+
+      // Подключение к серверу
+      const socket = io('http://localhost:3000');
+
+      // Обработчики событий
+      socket.on('assignSide', (side) => {
+        playerSide = side;
+        document.getElementById('instructions').textContent =
+          `Вы управляете ${side === 'left' ? 'левой' : 'правой'} ракеткой`;
+      });
+
+      socket.on('gameState', (state) => {
+        // Обновление позиций
+        ball = {
+          x: (state.ball.x / 100) * CANVAS_WIDTH,
+          y: (state.ball.y / 100) * CANVAS_HEIGHT,
+        };
+
+        // Обновление ракеток
+        if (playerSide === 'left') {
+          opponentPaddle = (state.paddles.right / 100) * CANVAS_HEIGHT;
+        } else {
+          opponentPaddle = (state.paddles.left / 100) * CANVAS_HEIGHT;
+        }
+
+        // Обновление счета
+        score = state.score;
+        document.getElementById('score').textContent =
+          `${score.player} : ${score.opponent}`;
+      });
+
+      // Управление
+      window.addEventListener('keydown', (e) => {
+        if (e.key in keys) keys[e.key] = true;
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (e.key in keys) keys[e.key] = false;
+      });
+
+      // Игровой цикл
+      function update() {
+        // Физика ракетки
+        if (keys.ArrowUp) paddleVelocity -= ACCELERATION;
+        if (keys.ArrowDown) paddleVelocity += ACCELERATION;
+
+        paddleVelocity *= FRICTION;
+        paddleVelocity = Math.max(
+          -MAX_SPEED,
+          Math.min(MAX_SPEED, paddleVelocity),
+        );
+        playerPaddle += paddleVelocity;
+
+        // Границы
+        playerPaddle = Math.max(
+          0,
+          Math.min(CANVAS_HEIGHT - PADDLE_HEIGHT, playerPaddle),
+        );
+
+        // Отправка позиции на сервер
+        if (playerSide) {
+          const normalizedPos = (playerPaddle / CANVAS_HEIGHT) * 100;
+          socket.emit('paddleMove', normalizedPos);
+        }
+      }
+
+      function draw() {
+        // Очистка
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+        // Ракетки
+        ctx.fillStyle = '#FFF';
+
+        // Игрок
+        if (playerSide === 'left') {
+          ctx.fillRect(20, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+          ctx.fillRect(
+            CANVAS_WIDTH - 35,
+            opponentPaddle,
+            PADDLE_WIDTH,
+            PADDLE_HEIGHT,
+          );
+        } else {
+          ctx.fillRect(20, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+          ctx.fillRect(
+            CANVAS_WIDTH - 35,
+            playerPaddle,
+            PADDLE_WIDTH,
+            PADDLE_HEIGHT,
+          );
+        }
+
+        // Шарик
+        ctx.beginPath();
+        ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+        ctx.fillStyle = 'red';
+        ctx.fill();
+
+        // Центральная линия
+        ctx.setLineDash([10, 10]);
+        ctx.beginPath();
+        ctx.moveTo(CANVAS_WIDTH / 2, 0);
+        ctx.lineTo(CANVAS_WIDTH / 2, CANVAS_HEIGHT);
+        ctx.strokeStyle = '#333';
+        ctx.stroke();
+      }
+
+      // Главный цикл
+      function gameLoop() {
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+      }
+
+      gameLoop();
+    </script>
+  </body>
+</html>
