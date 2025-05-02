@@ -71,7 +71,9 @@
       const MAX_SPEED = 8;
 
       // Подключение к серверу
-      const socket = io('http://localhost:3000');
+      const socket = io('https://pong-n66q.onrender.com/', {
+        transports: ['websocket'] // Важно для Render!
+      });
 
       // Обработчики событий
       socket.on('assignSide', (side) => {

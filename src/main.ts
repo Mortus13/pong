@@ -6,7 +6,9 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-  app.enableCors();
+  app.enableCors({
+    origin: 'https://pong-n66q.onrender.com'
+  });
   // Настройка WebSocket
   app.useWebSocketAdapter(new IoAdapter(app));
 
