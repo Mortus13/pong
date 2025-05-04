@@ -6,6 +6,7 @@ import {
   SubscribeMessage,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+type UserRole = 'player' | 'spectator';
 
 @WebSocketGateway({ cors: true })
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -18,6 +19,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly BALL_RADIUS = 10;
   private readonly BASE_SPEED = 5;
   private readonly SPEED_INCREASE = 1;
+  
 
   private gameState = {
     ball: {
@@ -35,40 +37,75 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   };
 
   private gameInterval: NodeJS.Timeout | null = null;
-  private players: { client: Socket; side: 'left' | 'right' }[] = [];
+  private players: {
+    client: Socket;
+    side: 'left' | 'right' | null;
+    role: UserRole;
+  }[] = [];
 
   handleConnection(client: Socket) {
-    // Назначение стороны новому игроку
+    if (this.players.length >= 2) {
+      // Третий и далее - зрители
+      this.players.push({ client, side: null, role: 'spectator' });
+      client.emit('roleAssigned', 'spectator');
+      return;
+    }
+  
+    // Первые два - игроки
     const side = this.players.length === 0 ? 'left' : 'right';
-    this.players.push({ client, side });
+    this.players.push({ client, side, role: 'player' });
+    client.emit('roleAssigned', 'player');
     client.emit('assignSide', side);
-
-    if (!this.gameInterval) {
+  
+    if (this.players.filter(p => p.role === 'player').length === 2) {
       this.startGame();
     }
   }
 
   handleDisconnect(client: Socket) {
-    this.players = this.players.filter((p) => p.client !== client);
-    if (this.players.length === 0 && this.gameInterval) {
-      clearInterval(this.gameInterval);
-      this.gameInterval = null;
+    const playerIndex = this.players.findIndex(p => p.client === client);
+    if (playerIndex !== -1) {
+      const disconnectedPlayer = this.players[playerIndex];
+      this.players.splice(playerIndex, 1);
+      
+      // Если отключился игрок, ищем зрителя на замену
+      if (disconnectedPlayer.role === 'player') {
+        const spectator = this.players.find(p => p.role === 'spectator');
+        if (spectator) {
+          spectator.role = 'player';
+          spectator.side = disconnectedPlayer.side;
+          spectator.client.emit('roleAssigned', 'player');
+          spectator.client.emit('assignSide', disconnectedPlayer.side);
+        }
+      }
     }
   }
-
-  startGame() {
+  private getNormalizedGameState() {
+    return {
+      ball: {
+        x: (this.gameState.ball.x / this.CANVAS_WIDTH) * 100,
+        y: (this.gameState.ball.y / this.CANVAS_HEIGHT) * 100,
+      },
+      paddles: {
+        left: (this.gameState.paddles.left / this.CANVAS_HEIGHT) * 100,
+        right: (this.gameState.paddles.right / this.CANVAS_HEIGHT) * 100,
+      },
+      score: this.gameState.score,
+    };
+  }
+  private startGame() {
+    if (this.gameInterval) clearInterval(this.gameInterval);
+    
     this.gameInterval = setInterval(() => {
       this.updateGameState();
-      this.server.emit('gameState', {
-        ball: {
-          x: (this.gameState.ball.x / this.CANVAS_WIDTH) * 100,
-          y: (this.gameState.ball.y / this.CANVAS_HEIGHT) * 100,
-        },
-        paddles: {
-          left: (this.gameState.paddles.left / this.CANVAS_HEIGHT) * 100,
-          right: (this.gameState.paddles.right / this.CANVAS_HEIGHT) * 100,
-        },
-        score: this.gameState.score,
+      const gameData = this.getNormalizedGameState();
+      // Отправляем состояние всем подключенным
+      this.players.forEach(player => {
+        player.client.emit('gameState', {
+          ...gameData,
+          yourRole: player.role,
+          yourSide: player.side
+        });
       });
     }, 16);
   }
@@ -154,10 +191,13 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('paddleMove')
   handlePaddleMove(client: Socket, position: number) {
-    const player = this.players.find((p) => p.client === client);
-    if (player) {
-      this.gameState.paddles[player.side] =
-        (position / 100) * this.CANVAS_HEIGHT;
+    const player = this.players.find(p => p.client === client);
+    
+    // Только игроки могут двигать ракетки
+    if (player?.role !== 'player') return;
+
+    if (player.side) {
+      this.gameState.paddles[player.side] = (position / 100) * this.CANVAS_HEIGHT;
     }
   }
 }

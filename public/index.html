@@ -29,6 +29,17 @@
         margin: 20px 0;
         text-shadow: 0 0 10px #fff;
       }
+      #spectator-notice {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #fff;
+        background: rgba(0,0,0,0.7);
+        padding: 10px 20px;
+        border-radius: 5px;
+        display: none;
+      }
     </style>
     <link
       href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
@@ -36,6 +47,8 @@
     />
   </head>
   <body>
+    <div id="status"></div>
+    <div id="spectator-notice">Вы наблюдатель.</div>
     <div id="gameContainer">
       <div id="score">0 : 0</div>
       <canvas id="gameCanvas"></canvas>
@@ -102,6 +115,14 @@
           `${score.player} : ${score.opponent}`;
       });
 
+      socket.on('roleAssigned', (role) => {
+        if (role === 'spectator') {
+          document.getElementById('status').textContent = 'Вы наблюдатель';
+          // Отключаем управление
+          window.removeEventListener('keydown', handleKeyDown);
+          window.removeEventListener('keyup', handleKeyUp);
+        }
+      });
       // Управление
       window.addEventListener('keydown', (e) => {
         if (e.key in keys) keys[e.key] = true;
