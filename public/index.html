@@ -75,6 +75,10 @@
       let opponentPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
       let ball = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
       let score = { player: 0, opponent: 0 };
+      let lastBall = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
+      let lastSentPos = 0;
+      const SEND_THRESHOLD = 1;
+      const INTERPOLATION_FACTOR = 0.2;
 
       // Физика управления
       let keys = { ArrowUp: false, ArrowDown: false };
@@ -87,6 +91,11 @@
       const socket = io('https://pong-n66q.onrender.com/', {
         transports: ['websocket'] // Важно для Render!
       });
+      let lastServerState = null;
+      let clientPrediction = {
+        ball: { x: 0, y: 0 },
+        paddles: { left: 0, right: 0 }
+      };
 
       // Обработчики событий
       socket.on('assignSide', (side) => {
@@ -95,24 +104,27 @@
           `Вы управляете ${side === 'left' ? 'левой' : 'правой'} ракеткой`;
       });
 
-      socket.on('gameState', (state) => {
-        // Обновление позиций
-        ball = {
-          x: (state.ball.x / 100) * CANVAS_WIDTH,
-          y: (state.ball.y / 100) * CANVAS_HEIGHT,
+      socket.on('gameState', (serverState) => {
+        if (!serverState) return;
+        
+        // Коррекция позиции с учетом задержки
+        const now = Date.now();
+        const latency = now - serverState.serverTime;
+        
+        // Предсказание позиции шарика
+        clientPrediction.ball = {
+            x: (serverState.ball.x / 100) * CANVAS_WIDTH + (serverState.ball.dx * latency / 1000),
+            y: (serverState.ball.y / 100) * CANVAS_HEIGHT + (serverState.ball.dy * latency / 1000)
         };
-
+        
         // Обновление ракеток
-        if (playerSide === 'left') {
-          opponentPaddle = (state.paddles.right / 100) * CANVAS_HEIGHT;
-        } else {
-          opponentPaddle = (state.paddles.left / 100) * CANVAS_HEIGHT;
-        }
-
+        opponentPaddle = (playerSide === 'left' 
+            ? serverState.paddles.right 
+            : serverState.paddles.left) / 100 * CANVAS_HEIGHT;
+        
         // Обновление счета
-        score = state.score;
-        document.getElementById('score').textContent =
-          `${score.player} : ${score.opponent}`;
+        score = serverState.score;
+        document.getElementById('score').textContent = `${score.player} : ${score.opponent}`;
       });
 
       socket.on('roleAssigned', (role) => {
@@ -122,6 +134,24 @@
           window.removeEventListener('keydown', handleKeyDown);
           window.removeEventListener('keyup', handleKeyUp);
         }
+      });
+
+      socket.on('connect_error', (err) => {
+          console.error('Connection error:', err);
+          document.getElementById('status').textContent = 'Ошибка подключения';
+      });
+
+      socket.on('disconnect', (reason) => {
+          document.getElementById('status').textContent = 'Отключен от сервера';
+      });
+
+      socket.on('gameReset', () => {
+          // Сброс состояния игры на клиенте
+          ball = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
+          playerPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
+          opponentPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
+          score = { player: 0, opponent: 0 };
+          document.getElementById('score').textContent = '0 : 0';
       });
       // Управление
       window.addEventListener('keydown', (e) => {
@@ -156,6 +186,16 @@
           const normalizedPos = (playerPaddle / CANVAS_HEIGHT) * 100;
           socket.emit('paddleMove', normalizedPos);
         }
+
+        const currentPos = (playerPaddle / CANVAS_HEIGHT) * 100;
+        if (Math.abs(currentPos - lastSentPos) > SEND_THRESHOLD) {
+            socket.emit('paddleMove', { 
+                pos: currentPos, 
+                clientTime: Date.now(),
+                velocity: paddleVelocity 
+            });
+            lastSentPos = currentPos;
+        }
       }
 
       function draw() {
@@ -185,6 +225,10 @@
           );
         }
 
+        // Интерполяция позиции шарика
+        ball.x += (clientPrediction.ball.x - ball.x) * INTERPOLATION_FACTOR;
+        ball.y += (clientPrediction.ball.y - ball.y) * INTERPOLATION_FACTOR;
+
         // Шарик
         ctx.beginPath();
         ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
@@ -202,8 +246,9 @@
 
       // Главный цикл
       function gameLoop() {
+        const renderState = lastServerState ? clientPrediction : localState;
         update();
-        draw();
+        draw(renderState);
         requestAnimationFrame(gameLoop);
       }
 

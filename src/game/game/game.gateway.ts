@@ -19,7 +19,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly BALL_RADIUS = 10;
   private readonly BASE_SPEED = 5;
   private readonly SPEED_INCREASE = 1;
-  
+  private readonly TICK_RATE = 20;
+
+  private lastUpdateTime: number = 0;
 
   private gameState = {
     ball: {
@@ -42,43 +44,81 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     side: 'left' | 'right' | null;
     role: UserRole;
   }[] = [];
+  private resetGame() {
+    // Сброс состояния игры
+    this.gameState = {
+        ball: {
+            x: this.CANVAS_WIDTH / 2,
+            y: this.CANVAS_HEIGHT / 2,
+            dx: this.BASE_SPEED,
+            dy: 0,
+            speed: this.BASE_SPEED,
+        },
+        paddles: {
+            left: this.CANVAS_HEIGHT / 2 - this.PADDLE_HEIGHT / 2,
+            right: this.CANVAS_HEIGHT / 2 - this.PADDLE_HEIGHT / 2,
+        },
+        score: { player: 0, opponent: 0 },
+    };
 
+    // Оповещаем всех игроков о сбросе
+    this.players.forEach(player => {
+        player.client.emit('gameReset');
+    });
+  }
   handleConnection(client: Socket) {
-    if (this.players.length >= 2) {
-      // Третий и далее - зрители
-      this.players.push({ client, side: null, role: 'spectator' });
-      client.emit('roleAssigned', 'spectator');
-      return;
+    // Проверяем, есть ли уже 2 игрока
+    const playerCount = this.players.filter(p => p.role === 'player').length;
+    
+    if (playerCount >= 2) {
+        // Третий и далее - зрители
+        this.players.push({ client, side: null, role: 'spectator' });
+        client.emit('roleAssigned', 'spectator');
+        return;
     }
-  
-    // Первые два - игроки
-    const side = this.players.length === 0 ? 'left' : 'right';
+    
+    // Назначаем сторону новому игроку
+    const leftPlayerExists = this.players.some(p => p.side === 'left');
+    const side = leftPlayerExists ? 'right' : 'left';
     this.players.push({ client, side, role: 'player' });
     client.emit('roleAssigned', 'player');
     client.emit('assignSide', side);
-  
+    
+    // Запускаем игру если есть 2 игрока
     if (this.players.filter(p => p.role === 'player').length === 2) {
-      this.startGame();
+        this.startGame();
     }
   }
 
   handleDisconnect(client: Socket) {
-    const playerIndex = this.players.findIndex(p => p.client === client);
-    if (playerIndex !== -1) {
+      const playerIndex = this.players.findIndex(p => p.client === client);
+      if (playerIndex === -1) return;
+      
       const disconnectedPlayer = this.players[playerIndex];
       this.players.splice(playerIndex, 1);
       
-      // Если отключился игрок, ищем зрителя на замену
+      // Если отключился игрок, останавливаем игру
       if (disconnectedPlayer.role === 'player') {
-        const spectator = this.players.find(p => p.role === 'spectator');
-        if (spectator) {
-          spectator.role = 'player';
-          spectator.side = disconnectedPlayer.side;
-          spectator.client.emit('roleAssigned', 'player');
-          spectator.client.emit('assignSide', disconnectedPlayer.side);
-        }
+          if (this.gameInterval) {
+              clearInterval(this.gameInterval);
+              this.gameInterval = null;
+          }
+          
+          // Ищем первого зрителя для замены
+          const spectator = this.players.find(p => p.role === 'spectator');
+          if (spectator) {
+              spectator.role = 'player';
+              spectator.side = disconnectedPlayer.side;
+              spectator.client.emit('roleAssigned', 'player');
+              spectator.client.emit('assignSide', disconnectedPlayer.side);
+              
+              // Если теперь есть 2 игрока, перезапускаем игру
+              if (this.players.filter(p => p.role === 'player').length === 2) {
+                  this.resetGame();
+                  this.startGame();
+              }
+          }
       }
-    }
   }
   private getNormalizedGameState() {
     return {
@@ -94,26 +134,28 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     };
   }
   private startGame() {
-    if (this.gameInterval) clearInterval(this.gameInterval);
-    
+    this.lastUpdateTime = Date.now();
     this.gameInterval = setInterval(() => {
-      this.updateGameState();
-      const gameData = this.getNormalizedGameState();
-      // Отправляем состояние всем подключенным
+      const now = Date.now();
+      const delta = now - this.lastUpdateTime;
+      this.lastUpdateTime = now;
+      
+      this.updateGameState(delta);
+      
       this.players.forEach(player => {
         player.client.emit('gameState', {
-          ...gameData,
-          yourRole: player.role,
+          ...this.getNormalizedGameState(),
+          serverTime: now, // Добавляем метку времени
           yourSide: player.side
         });
       });
-    }, 16);
+    }, this.TICK_RATE);
   }
 
-  updateGameState() {
-    // Движение шарика с текущей скоростью
-    this.gameState.ball.x += this.gameState.ball.dx;
-    this.gameState.ball.y += this.gameState.ball.dy;
+  private updateGameState(delta: number) {
+    // Применяем дельту времени для плавного движения
+    this.gameState.ball.x += this.gameState.ball.dx * (delta / 16);
+    this.gameState.ball.y += this.gameState.ball.dy * (delta / 16);
 
     // Отскок от верхней/нижней границы
     if (
@@ -190,14 +232,15 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('paddleMove')
-  handlePaddleMove(client: Socket, position: number) {
+  handlePaddleMove(client: Socket, data: { pos: number; clientTime: number }) {
     const player = this.players.find(p => p.client === client);
+    if (!player?.side) return;
     
-    // Только игроки могут двигать ракетки
-    if (player?.role !== 'player') return;
-
-    if (player.side) {
-      this.gameState.paddles[player.side] = (position / 100) * this.CANVAS_HEIGHT;
-    }
+    // Компенсация задержки
+    const serverTime = Date.now();
+    const latency = serverTime - data.clientTime;
+    const compensatedPos = data.pos * (1 + latency / 1000);
+    
+    this.gameState.paddles[player.side] = (compensatedPos / 100) * this.CANVAS_HEIGHT;
   }
 }
