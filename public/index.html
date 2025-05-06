@@ -56,6 +56,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
+      document.addEventListener('DOMContentLoaded', () => {
       // Конфигурация игры
       const CANVAS_WIDTH = 800;
       const CANVAS_HEIGHT = 600;
@@ -70,6 +71,7 @@
       canvas.height = CANVAS_HEIGHT;
 
       // Состояние игры
+      
       let playerSide = null;
       let playerPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
       let opponentPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
@@ -104,28 +106,29 @@
           `Вы управляете ${side === 'left' ? 'левой' : 'правой'} ракеткой`;
       });
 
-      socket.on('gameState', (serverState) => {
-        if (!serverState) return;
+      socket.on('gameState', (state) => {
+        if (!state) return;
         
-        // Коррекция позиции с учетом задержки
-        const now = Date.now();
-        const latency = now - serverState.serverTime;
-        
-        // Предсказание позиции шарика
-        clientPrediction.ball = {
-            x: (serverState.ball.x / 100) * CANVAS_WIDTH + (serverState.ball.dx * latency / 1000),
-            y: (serverState.ball.y / 100) * CANVAS_HEIGHT + (serverState.ball.dy * latency / 1000)
+        // Обновление позиции шарика
+        ball = {
+            x: (state.ball.x / 100) * CANVAS_WIDTH,
+            y: (state.ball.y / 100) * CANVAS_HEIGHT
         };
         
         // Обновление ракеток
-        opponentPaddle = (playerSide === 'left' 
-            ? serverState.paddles.right 
-            : serverState.paddles.left) / 100 * CANVAS_HEIGHT;
+        if (playerSide === 'left') {
+            opponentPaddle = (state.paddles.right / 100) * CANVAS_HEIGHT;
+        } else if (playerSide === 'right') {
+            opponentPaddle = (state.paddles.left / 100) * CANVAS_HEIGHT;
+        }
         
         // Обновление счета
-        score = serverState.score;
-        document.getElementById('score').textContent = `${score.player} : ${score.opponent}`;
-      });
+        if (state.score) {
+            score = state.score;
+            document.getElementById('score').textContent = 
+                `${score.player} : ${score.opponent}`;
+        }
+    });
 
       socket.on('roleAssigned', (role) => {
         if (role === 'spectator') {
@@ -141,8 +144,13 @@
           document.getElementById('status').textContent = 'Ошибка подключения';
       });
 
-      socket.on('disconnect', (reason) => {
-          document.getElementById('status').textContent = 'Отключен от сервера';
+      socket.on('connect', () => {
+          console.log('Connected to server');
+          document.getElementById('status').textContent = 'Connected';
+      });
+
+      socket.on('disconnect', () => {
+          document.getElementById('status').textContent = 'Disconnected';
       });
 
       socket.on('gameReset', () => {
@@ -205,29 +213,14 @@
 
         // Ракетки
         ctx.fillStyle = '#FFF';
-
-        // Игрок
-        if (playerSide === 'left') {
-          ctx.fillRect(20, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
-          ctx.fillRect(
-            CANVAS_WIDTH - 35,
-            opponentPaddle,
-            PADDLE_WIDTH,
-            PADDLE_HEIGHT,
-          );
-        } else {
-          ctx.fillRect(20, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
-          ctx.fillRect(
-            CANVAS_WIDTH - 35,
-            playerPaddle,
-            PADDLE_WIDTH,
-            PADDLE_HEIGHT,
-          );
-        }
-
-        // Интерполяция позиции шарика
-        ball.x += (clientPrediction.ball.x - ball.x) * INTERPOLATION_FACTOR;
-        ball.y += (clientPrediction.ball.y - ball.y) * INTERPOLATION_FACTOR;
+        
+        // Левая ракетка (игрок или противник)
+        const leftPaddle = playerSide === 'left' ? playerPaddle : opponentPaddle;
+        ctx.fillRect(20, leftPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+        
+        // Правая ракетка
+        const rightPaddle = playerSide === 'right' ? playerPaddle : opponentPaddle;
+        ctx.fillRect(CANVAS_WIDTH - 35, rightPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
 
         // Шарик
         ctx.beginPath();
@@ -242,17 +235,18 @@
         ctx.lineTo(CANVAS_WIDTH / 2, CANVAS_HEIGHT);
         ctx.strokeStyle = '#333';
         ctx.stroke();
-      }
+        ctx.setLineDash([]);
+    }
 
       // Главный цикл
       function gameLoop() {
-        const renderState = lastServerState ? clientPrediction : localState;
         update();
-        draw(renderState);
+        draw();
         requestAnimationFrame(gameLoop);
       }
-
-      gameLoop();
+      
+      gameLoop()
+    });
     </script>
   </body>
 </html>
