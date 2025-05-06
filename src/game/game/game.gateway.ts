@@ -67,6 +67,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     });
   }
   handleConnection(client: Socket) {
+    console.log('Client connected');
     // Проверяем, есть ли уже 2 игрока
     const playerCount = this.players.filter(p => p.role === 'player').length;
     
@@ -88,6 +89,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     if (this.players.filter(p => p.role === 'player').length === 2) {
         this.startGame();
     }
+    console.log(`Assigned ${side} to new player`);
   }
 
   handleDisconnect(client: Socket) {
@@ -153,6 +155,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   private updateGameState(delta: number) {
+    console.log('Updating game state', this.gameState.paddles);
     // Применяем дельту времени для плавного движения
     this.gameState.ball.x += this.gameState.ball.dx * (delta / 16);
     this.gameState.ball.y += this.gameState.ball.dy * (delta / 16);
@@ -233,14 +236,10 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage('paddleMove')
   handlePaddleMove(client: Socket, data: { pos: number; clientTime: number }) {
-    const player = this.players.find(p => p.client === client);
-    if (!player?.side) return;
-    
-    // Компенсация задержки
-    const serverTime = Date.now();
-    const latency = serverTime - data.clientTime;
-    const compensatedPos = data.pos * (1 + latency / 1000);
-    
-    this.gameState.paddles[player.side] = (compensatedPos / 100) * this.CANVAS_HEIGHT;
+      const player = this.players.find(p => p.client === client);
+      if (!player?.side) return;
+      
+      // Просто применяем полученную позицию без компенсации (для теста)
+      this.gameState.paddles[player.side] = (data.pos / 100) * this.CANVAS_HEIGHT;
   }
 }

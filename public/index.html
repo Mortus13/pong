@@ -162,16 +162,20 @@
           document.getElementById('score').textContent = '0 : 0';
       });
       // Управление
-      window.addEventListener('keydown', (e) => {
-        if (e.key in keys) keys[e.key] = true;
-      });
+      function handleKeyDown(e) {
+          if (e.key in keys) keys[e.key] = true;
+      }
 
-      window.addEventListener('keyup', (e) => {
-        if (e.key in keys) keys[e.key] = false;
-      });
+      function handleKeyUp(e) {
+          if (e.key in keys) keys[e.key] = false;
+      }
+
+      window.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('keyup', handleKeyUp);
 
       // Игровой цикл
       function update() {
+        if (!playerSide) return;
         // Физика ракетки
         if (keys.ArrowUp) paddleVelocity -= ACCELERATION;
         if (keys.ArrowDown) paddleVelocity += ACCELERATION;
@@ -191,8 +195,11 @@
 
         // Отправка позиции на сервер
         if (playerSide) {
-          const normalizedPos = (playerPaddle / CANVAS_HEIGHT) * 100;
-          socket.emit('paddleMove', normalizedPos);
+            const normalizedPos = (playerPaddle / CANVAS_HEIGHT) * 100;
+            socket.emit('paddleMove', { 
+                pos: normalizedPos, 
+                clientTime: Date.now()
+            });
         }
 
         const currentPos = (playerPaddle / CANVAS_HEIGHT) * 100;
@@ -215,12 +222,13 @@
         ctx.fillStyle = '#FFF';
         
         // Левая ракетка (игрок или противник)
-        const leftPaddle = playerSide === 'left' ? playerPaddle : opponentPaddle;
-        ctx.fillRect(20, leftPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
-        
-        // Правая ракетка
-        const rightPaddle = playerSide === 'right' ? playerPaddle : opponentPaddle;
-        ctx.fillRect(CANVAS_WIDTH - 35, rightPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+        if (playerSide === 'left') {
+            ctx.fillRect(20, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+            ctx.fillRect(CANVAS_WIDTH - 35, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+        } else {
+            ctx.fillRect(20, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+            ctx.fillRect(CANVAS_WIDTH - 35, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+        }
 
         // Шарик
         ctx.beginPath();
@@ -236,7 +244,7 @@
         ctx.strokeStyle = '#333';
         ctx.stroke();
         ctx.setLineDash([]);
-    }
+      }
 
       // Главный цикл
       function gameLoop() {
