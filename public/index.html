@@ -38,7 +38,12 @@
         background: rgba(0,0,0,0.7);
         padding: 10px 20px;
         border-radius: 5px;
-        display: none;
+        opacity: 0;
+        transition: opacity 0.3s;
+        pointer-events: none;
+      }
+      #spectator-notice.show {
+        opacity: 1;
       }
     </style>
     <link
@@ -116,26 +121,22 @@
         };
         
         // Обновление ракеток
-        if (playerSide === 'left') {
-            opponentPaddle = (state.paddles.right / 100) * CANVAS_HEIGHT;
-        } else if (playerSide === 'right') {
-            opponentPaddle = (state.paddles.left / 100) * CANVAS_HEIGHT;
-        }
+        ctx.fillRect(20, playerSide === 'left' ? playerPaddle : opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+        ctx.fillRect(CANVAS_WIDTH - 35, playerSide === 'right' ? playerPaddle : opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
         
         // Обновление счета
-        if (state.score) {
-            score = state.score;
-            document.getElementById('score').textContent = 
-                `${score.player} : ${score.opponent}`;
-        }
+        score = state.score;
+        document.getElementById('score').textContent = `${score.player} : ${score.opponent}`;
     });
 
       socket.on('roleAssigned', (role) => {
+        const notice = document.getElementById('spectator-notice');
         if (role === 'spectator') {
+          notice.style.display = 'block';
           document.getElementById('status').textContent = 'Вы наблюдатель';
-          // Отключаем управление
-          window.removeEventListener('keydown', handleKeyDown);
-          window.removeEventListener('keyup', handleKeyUp);
+        } else {
+          notice.style.display = 'none';
+          document.getElementById('status').textContent = '';
         }
       });
 
@@ -222,7 +223,7 @@
         ctx.fillStyle = '#FFF';
         
         // Левая ракетка (игрок или противник)
-        if (playerSide === 'left') {
+        if (playerSide === null) {
             ctx.fillRect(20, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
             ctx.fillRect(CANVAS_WIDTH - 35, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
         } else {

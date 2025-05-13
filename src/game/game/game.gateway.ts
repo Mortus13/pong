@@ -75,6 +75,10 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
         // Третий и далее - зрители
         this.players.push({ client, side: null, role: 'spectator' });
         client.emit('roleAssigned', 'spectator');
+        client.emit('gameState',{
+          ...this.getNormalizedGameState(),
+          serverTime: Date.now()
+        })
         return;
     }
     
@@ -143,13 +147,9 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       this.lastUpdateTime = now;
       
       this.updateGameState(delta);
-      
-      this.players.forEach(player => {
-        player.client.emit('gameState', {
-          ...this.getNormalizedGameState(),
-          serverTime: now, // Добавляем метку времени
-          yourSide: player.side
-        });
+      this.server.emit('gameState', {
+        ...this.getNormalizedGameState(),
+        serverTime: now, // Добавляем метку времени
       });
     }, this.TICK_RATE);
   }
