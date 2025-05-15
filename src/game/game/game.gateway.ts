@@ -4,13 +4,14 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
   SubscribeMessage,
+  OnGatewayInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 
 type UserRole = 'player' | 'spectator';
 
 @WebSocketGateway({ cors: true })
-export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer() server: Server;
 
   private readonly CANVAS_WIDTH = 800;
@@ -20,7 +21,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
   private readonly BALL_RADIUS = 10;
   private readonly BASE_SPEED = 5;
   private readonly SPEED_INCREASE = 1;
-  private readonly TICK_RATE = 30; // Увеличено для оптимизации
+  private readonly TICK_RATE = 30;
 
   private lastUpdateTime: number = 0;
 
@@ -36,7 +37,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
       left: this.CANVAS_HEIGHT / 2 - this.PADDLE_HEIGHT / 2,
       right: this.CANVAS_HEIGHT / 2 - this.PADDLE_HEIGHT / 2,
     },
-    score: { left: 0, right: 0 }, // Уточнены имена для сторон
+    score: { left: 0, right: 0 },
   };
 
   private gameInterval: NodeJS.Timeout | null = null;
@@ -46,8 +47,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
     role: UserRole;
   }[] = [];
 
-  constructor() {
-    // Обработка ошибок WebSocket
+  afterInit() {
+    // Перенесена инициализация обработчика ошибок
     this.server.on('error', (err) => {
       console.error('WebSocket server error:', err);
     });
