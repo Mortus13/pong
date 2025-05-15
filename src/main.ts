@@ -8,18 +8,18 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.enableCors({
     origin: true,
-    credentials: true
+    credentials: true,
   });
-  // Настройка WebSocket
+
   app.useWebSocketAdapter(new IoAdapter(app));
 
-  // Статические файлы
-  app.useStaticAssets(join(__dirname, '..', 'public'), {prefix: '/'});
+  app.useStaticAssets(join(__dirname, '..', 'public'), { prefix: '/' });
   app.setBaseViewsDir(join(__dirname, '..', 'public'));
   app.setViewEngine('html');
 
-  await app.listen(process.env.PORT || 3000);
-  console.log(`Server running`);
+  const port = process.env.PORT || 3000;
+  await app.listen(port);
+  console.log(`Server running on port ${port}`);
 }
 bootstrap().catch((err) => {
   console.error('Fatal bootstrap error:', err);

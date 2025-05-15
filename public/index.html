@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
   <head>
     <title>Pong Game</title>
@@ -35,7 +35,7 @@
         left: 50%;
         transform: translateX(-50%);
         color: #fff;
-        background: rgba(0,0,0,0.7);
+        background: rgba(0, 0, 0, 0.7);
         padding: 10px 20px;
         border-radius: 5px;
         opacity: 0;
@@ -45,6 +45,13 @@
       #spectator-notice.show {
         opacity: 1;
       }
+      #status {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        color: #fff;
+        font-size: 16px;
+      }
     </style>
     <link
       href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
@@ -52,8 +59,8 @@
     />
   </head>
   <body>
-    <div id="status"></div>
-    <div id="spectator-notice">Вы наблюдатель.</div>
+    <div id="status">Connecting...</div>
+    <div id="spectator-notice">Вы наблюдатель</div>
     <div id="gameContainer">
       <div id="score">0 : 0</div>
       <canvas id="gameCanvas"></canvas>
@@ -62,198 +69,189 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
       document.addEventListener('DOMContentLoaded', () => {
-      // Конфигурация игры
-      const CANVAS_WIDTH = 800;
-      const CANVAS_HEIGHT = 600;
-      const PADDLE_HEIGHT = 100;
-      const PADDLE_WIDTH = 15;
-      const BALL_RADIUS = 10;
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 600;
+        const PADDLE_HEIGHT = 100;
+        const PADDLE_WIDTH = 15;
+        const BALL_RADIUS = 10;
+        const INTERPOLATION_FACTOR = 0.2;
+        const SEND_THRESHOLD = 1;
 
-      // Инициализация элементов
-      const canvas = document.getElementById('gameCanvas');
-      const ctx = canvas.getContext('2d');
-      canvas.width = CANVAS_WIDTH;
-      canvas.height = CANVAS_HEIGHT;
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = CANVAS_WIDTH;
+        canvas.height = CANVAS_HEIGHT;
 
-      // Состояние игры
-      
-      let playerSide = null;
-      let playerPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
-      let opponentPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
-      let ball = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
-      let score = { player: 0, opponent: 0 };
-      let lastBall = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
-      let lastSentPos = 0;
-      const SEND_THRESHOLD = 1;
-      const INTERPOLATION_FACTOR = 0.2;
+        let playerSide = null;
+        let playerPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
+        let opponentPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2; // Исправлено: PADDLE_HEIGHT2 → PADDLE_HEIGHT
+        let ball = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
+        let score = { left: 0, right: 0 };
+        let lastSentPos = 0;
+        let lastServerState = null;
 
-      // Физика управления
-      let keys = { ArrowUp: false, ArrowDown: false };
-      let paddleVelocity = 0;
-      const ACCELERATION = 0.5;
-      const FRICTION = 0.9;
-      const MAX_SPEED = 8;
+        let keys = { ArrowUp: false, ArrowDown: false };
+        let paddleVelocity = 0;
+        const ACCELERATION = 0.5;
+        const FRICTION = 0.9;
+        const MAX_SPEED = 8;
 
-      // Подключение к серверу
-      const socket = io('https://pong-n66q.onrender.com/', {
-        transports: ['websocket'] // Важно для Render!
-      });
-      let lastServerState = null;
-      let clientPrediction = {
-        ball: { x: 0, y: 0 },
-        paddles: { left: 0, right: 0 }
-      };
+        const socket = io('https://pong-n66q.onrender.com/');
+        setInterval(() => {
+          socket.emit('ping', Date.now());
+        }, 30000);
 
-      // Обработчики событий
-      socket.on('assignSide', (side) => {
-        playerSide = side;
-      });
-
-      socket.on('gameState', (state) => {
-        if (!state) return;
-        
-        // Обновление позиции шарика
-        ball = {
-            x: (state.ball.x / 100) * CANVAS_WIDTH,
-            y: (state.ball.y / 100) * CANVAS_HEIGHT
-        };
-        
-        // Обновление ракеток
-        ctx.fillRect(20, playerSide === 'left' ? playerPaddle : opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
-        ctx.fillRect(CANVAS_WIDTH - 35, playerSide === 'right' ? playerPaddle : opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
-        
-        // Обновление счета
-        score = state.score;
-        document.getElementById('score').textContent = `${score.player} : ${score.opponent}`;
-    });
-
-      socket.on('roleAssigned', (role) => {
-        const notice = document.getElementById('spectator-notice');
-        if (role === 'spectator') {
-          notice.style.display = 'block';
-          document.getElementById('status').textContent = 'Вы наблюдатель';
-        } else {
-          notice.style.display = 'none';
-          document.getElementById('status').textContent = '';
-        }
-      });
-
-      socket.on('connect_error', (err) => {
-          console.error('Connection error:', err);
-          document.getElementById('status').textContent = 'Ошибка подключения';
-      });
-
-      socket.on('connect', () => {
-          console.log('Connected to server');
+        socket.on('connect', () => {
+          console.log('Connected to server:', socket.id);
           document.getElementById('status').textContent = 'Connected';
-      });
+        });
 
-      socket.on('disconnect', () => {
+        socket.on('connect_error', (err) => {
+          console.error('Connection error:', err);
+          document.getElementById('status').textContent = 'Connection Error';
+        });
+
+        socket.on('disconnect', () => {
           document.getElementById('status').textContent = 'Disconnected';
-      });
+        });
 
-      socket.on('gameReset', () => {
-          // Сброс состояния игры на клиенте
+        socket.on('assignSide', (side) => {
+          playerSide = side;
+        });
+
+        socket.on('roleAssigned', (role) => {
+          const notice = document.getElementById('spectator-notice');
+          if (role === 'spectator') {
+            notice.classList.add('show');
+            playerSide = null;
+          } else {
+            notice.classList.remove('show');
+          }
+          document.getElementById('status').textContent = role === 'spectator' ? 'Spectator' : 'Connected';
+        });
+
+        socket.on('gameState', (state) => {
+          if (!state) return;
+
+          lastServerState = {
+            ball: {
+              x: (state.ball.x / 100) * CANVAS_WIDTH,
+              y: (state.ball.y / 100) * CANVAS_HEIGHT,
+            },
+            paddles: {
+              left: (state.paddles.left / 100) * CANVAS_HEIGHT,
+              right: (state.paddles.right / 100) * CANVAS_HEIGHT,
+            },
+            score: state.score,
+            serverTime: state.serverTime,
+          };
+        });
+
+        socket.on('scoreUpdate', (scoreData) => {
+          score = scoreData;
+          document.getElementById('score').textContent = `${score.left} : ${score.right}`;
+        });
+
+        socket.on('gameReset', () => {
           ball = { x: CANVAS_WIDTH / 2, y: CANVAS_HEIGHT / 2 };
           playerPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
           opponentPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
-          score = { player: 0, opponent: 0 };
+          score = { left: 0, right: 0 };
           document.getElementById('score').textContent = '0 : 0';
-      });
-      // Управление
-      function handleKeyDown(e) {
+        });
+
+        socket.on('pong', (clientTime) => {
+          console.log(`Ping response: ${Date.now() - clientTime}ms`);
+        });
+
+        function handleKeyDown(e) {
           if (e.key in keys) keys[e.key] = true;
-      }
-
-      function handleKeyUp(e) {
-          if (e.key in keys) keys[e.key] = false;
-      }
-
-      window.addEventListener('keydown', handleKeyDown);
-      window.addEventListener('keyup', handleKeyUp);
-
-      // Игровой цикл
-      function update() {
-        if (!playerSide) return;
-        // Физика ракетки
-        if (keys.ArrowUp) paddleVelocity -= ACCELERATION;
-        if (keys.ArrowDown) paddleVelocity += ACCELERATION;
-
-        paddleVelocity *= FRICTION;
-        paddleVelocity = Math.max(
-          -MAX_SPEED,
-          Math.min(MAX_SPEED, paddleVelocity),
-        );
-        playerPaddle += paddleVelocity;
-
-        // Границы
-        playerPaddle = Math.max(
-          0,
-          Math.min(CANVAS_HEIGHT - PADDLE_HEIGHT, playerPaddle),
-        );
-
-        // Отправка позиции на сервер
-        if (playerSide) {
-            const normalizedPos = (playerPaddle / CANVAS_HEIGHT) * 100;
-            socket.emit('paddleMove', { 
-                pos: normalizedPos, 
-                clientTime: Date.now()
-            });
         }
 
-        const currentPos = (playerPaddle / CANVAS_HEIGHT) * 100;
-        if (Math.abs(currentPos - lastSentPos) > SEND_THRESHOLD) {
-            socket.emit('paddleMove', { 
-                pos: currentPos, 
-                clientTime: Date.now(),
-                velocity: paddleVelocity 
+        function handleKeyUp(e) {
+          if (e.key in keys) keys[e.key] = false;
+        }
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+
+        canvas.addEventListener('touchmove', (e) => {
+          e.preventDefault();
+          const touchY = e.touches[0].clientY - canvas.getBoundingClientRect().top;
+          playerPaddle = Math.max(0, Math.min(CANVAS_HEIGHT - PADDLE_HEIGHT, touchY - PADDLE_HEIGHT / 2));
+        });
+
+        function update() {
+          if (!playerSide && playerSide !== null) return;
+
+          if (keys.ArrowUp) paddleVelocity -= ACCELERATION;
+          if (keys.ArrowDown) paddleVelocity += ACCELERATION;
+
+          paddleVelocity *= FRICTION;
+          paddleVelocity = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, paddleVelocity));
+          playerPaddle += paddleVelocity;
+
+          playerPaddle = Math.max(0, Math.min(CANVAS_HEIGHT - PADDLE_HEIGHT, playerPaddle));
+
+          const currentPos = (playerPaddle / CANVAS_HEIGHT) * 100;
+          if (Math.abs(currentPos - lastSentPos) > SEND_THRESHOLD) {
+            socket.emit('paddleMove', {
+              pos: currentPos,
+              clientTime: Date.now(),
             });
             lastSentPos = currentPos;
-        }
-      }
-
-      function draw() {
-        // Очистка
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-        // Ракетки
-        ctx.fillStyle = '#FFF';
-        
-        // Левая ракетка (игрок или противник)
-        if (playerSide === null) {
-            ctx.fillRect(20, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
-            ctx.fillRect(CANVAS_WIDTH - 35, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
-        } else {
-            ctx.fillRect(20, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
-            ctx.fillRect(CANVAS_WIDTH - 35, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+          }
         }
 
-        // Шарик
-        ctx.beginPath();
-        ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = 'red';
-        ctx.fill();
+        function interpolate() {
+          if (!lastServerState) return;
 
-        // Центральная линия
-        ctx.setLineDash([10, 10]);
-        ctx.beginPath();
-        ctx.moveTo(CANVAS_WIDTH / 2, 0);
-        ctx.lineTo(CANVAS_WIDTH / 2, CANVAS_HEIGHT);
-        ctx.strokeStyle = '#333';
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
+          ball.x += (lastServerState.ball.x - ball.x) * INTERPOLATION_FACTOR;
+          ball.y += (lastServerState.ball.y - ball.y) * INTERPOLATION_FACTOR;
 
-      // Главный цикл
-      function gameLoop() {
-        update();
-        draw();
-        requestAnimationFrame(gameLoop);
-      }
-      
-      gameLoop()
-    });
+          if (playerSide === 'left') {
+            opponentPaddle += (lastServerState.paddles.right - opponentPaddle) * INTERPOLATION_FACTOR;
+            playerPaddle = lastServerState.paddles.left;
+          } else if (playerSide === 'right') {
+            opponentPaddle += (lastServerState.paddles.left - opponentPaddle) * INTERPOLATION_FACTOR;
+            playerPaddle = lastServerState.paddles.right;
+          } else {
+            opponentPaddle += (lastServerState.paddles.left - opponentPaddle) * INTERPOLATION_FACTOR;
+            playerPaddle += (lastServerState.paddles.right - playerPaddle) * INTERPOLATION_FACTOR;
+          }
+        }
+
+        function draw() {
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+          ctx.fillStyle = '#FFF';
+          ctx.fillRect(20, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+          ctx.fillRect(CANVAS_WIDTH - 35, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+
+          ctx.beginPath();
+          ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+          ctx.fillStyle = 'red';
+          ctx.fill();
+
+          ctx.setLineDash([10, 10]);
+          ctx.beginPath();
+          ctx.moveTo(CANVAS_WIDTH / 2, 0);
+          ctx.lineTo(CANVAS_WIDTH / 2, CANVAS_HEIGHT);
+          ctx.strokeStyle = '#333';
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        function gameLoop() {
+          update();
+          interpolate();
+          draw();
+          requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+      });
     </script>
   </body>
 </html>
