@@ -107,8 +107,6 @@
       // Обработчики событий
       socket.on('assignSide', (side) => {
         playerSide = side;
-        document.getElementById('instructions').textContent =
-          `Вы управляете ${side === 'left' ? 'левой' : 'правой'} ракеткой`;
       });
 
       socket.on('gameState', (state) => {
