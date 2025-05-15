@@ -10,7 +10,13 @@ import { Server, Socket } from 'socket.io';
 
 type UserRole = 'player' | 'spectator';
 
-@WebSocketGateway({ cors: true })
+@WebSocketGateway({
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+})
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer() server: Server;
 
@@ -48,10 +54,10 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   }[] = [];
 
   afterInit() {
-    // Перенесена инициализация обработчика ошибок
     this.server.on('error', (err) => {
       console.error('WebSocket server error:', err);
     });
+    console.log('WebSocket server initialized');
   }
 
   private resetGame() {
@@ -73,6 +79,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     this.players.forEach((player) => {
       player.client.emit('gameReset');
     });
+    console.log('Game reset');
   }
 
   handleConnection(client: Socket) {
@@ -86,6 +93,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         ...this.getNormalizedGameState(),
         serverTime: Date.now(),
       });
+      console.log(`Assigned spectator to client: ${client.id}`);
       return;
     }
 
@@ -99,7 +107,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       this.resetGame();
       this.startGame();
     }
-    console.log(`Assigned ${side} to new player`);
+    console.log(`Assigned ${side} to player: ${client.id}`);
   }
 
   handleDisconnect(client: Socket) {
@@ -158,6 +166,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         serverTime: now,
       });
     }, this.TICK_RATE);
+    console.log('Game started');
   }
 
   private updateGameState(delta: number) {
@@ -235,9 +244,18 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   @SubscribeMessage('paddleMove')
   handlePaddleMove(client: Socket, data: { pos: number; clientTime: number }) {
     const player = this.players.find((p) => p.client === client);
-    if (!player?.side) return;
+    if (!player?.side) {
+      console.warn(`No player found for client: ${client.id}`);
+      return;
+    }
 
+    console.log(`Received paddleMove from ${client.id} (${player.side}): pos=${data.pos}, time=${data.clientTime}`);
     this.gameState.paddles[player.side] = (data.pos / 100) * this.CANVAS_HEIGHT;
+    // Немедленная отправка обновленного состояния для синхронизации
+    this.server.emit('gameState', {
+      ...this.getNormalizedGameState(),
+      serverTime: Date.now(),
+    });
   }
 
   @SubscribeMessage('ping')

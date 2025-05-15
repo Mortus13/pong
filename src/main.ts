@@ -7,10 +7,12 @@ import { IoAdapter } from '@nestjs/platform-socket.io';
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
   app.enableCors({
-    origin: true,
+    origin: '*',
+    methods: ['GET', 'POST'],
     credentials: true,
   });
 
+  // Явная настройка WebSocket-адаптера
   app.useWebSocketAdapter(new IoAdapter(app));
 
   app.useStaticAssets(join(__dirname, '..', 'public'), { prefix: '/' });
