@@ -93,13 +93,12 @@
           let score = { left: 0, right: 0 };
           let lastSentPos = 0;
           let lastServerState = null;
-          let ballVisible = true;
 
           let keys = { ArrowUp: false, ArrowDown: false };
           let paddleVelocity = 0;
-          const ACCELERATION = 1;
+          const ACCELERATION = 0.8;
           const FRICTION = 0.85;
-          const MAX_SPEED = 14;
+          const MAX_SPEED = 12;
 
           const socket = io('https://pong-n66q.onrender.com/', {
             transports: ['websocket', 'polling'],
@@ -155,6 +154,9 @@
               score: state.score,
               serverTime: state.serverTime,
             };
+            // Мгновенно устанавливаем координаты шарика
+            ball.x = lastServerState.ball.x;
+            ball.y = lastServerState.ball.y;
             console.log('Received gameState:', lastServerState);
           });
 
@@ -169,14 +171,8 @@
             playerPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
             opponentPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
             score = { left: 0, right: 0 };
-            ballVisible = true;
             document.getElementById('score').textContent = '0 : 0';
             console.log('Game reset on client');
-          });
-
-          socket.on('ballMissed', ({ direction }) => {
-            ballVisible = false;
-            console.log(`Ball missed, direction: ${direction}`);
           });
 
           socket.on('pong', (clientTime) => {
@@ -233,9 +229,7 @@
           function interpolate() {
             if (!lastServerState) return;
 
-            ball.x += (lastServerState.ball.x - ball.x) * INTERPOLATION_FACTOR;
-            ball.y += (lastServerState.ball.y - ball.y) * INTERPOLATION_FACTOR;
-
+            // Интерполяция только для ракеток
             if (playerSide === 'left') {
               opponentPaddle += (lastServerState.paddles.right - opponentPaddle) * INTERPOLATION_FACTOR;
             } else if (playerSide === 'right') {
@@ -262,12 +256,10 @@
               ctx.fillRect(CANVAS_WIDTH - 35, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT); // Зритель: правая ракетка
             }
 
-            if (ballVisible) {
-              ctx.beginPath();
-              ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
-              ctx.fillStyle = 'red';
-              ctx.fill();
-            }
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+            ctx.fillStyle = 'red';
+            ctx.fill();
 
             ctx.setLineDash([10, 10]);
             ctx.beginPath();

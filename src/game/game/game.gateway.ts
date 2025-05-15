@@ -28,10 +28,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   private readonly BASE_SPEED = 5;
   private readonly SPEED_INCREASE = 1;
   private readonly TICK_RATE = 30;
-  private readonly BALL_RESET_DELAY = 1000; // Задержка 1 секунда
 
   private lastUpdateTime: number = 0;
-  private ballMissed: boolean = false;
 
   private gameState = {
     ball: {
@@ -77,7 +75,6 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       },
       score: { left: 0, right: 0 },
     };
-    this.ballMissed = false;
 
     this.players.forEach((player) => {
       player.client.emit('gameReset');
@@ -145,8 +142,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   private getNormalizedGameState() {
     return {
       ball: {
-        x: this.ballMissed ? -100 : (this.gameState.ball.x / this.CANVAS_WIDTH) * 100, // Скрываем шарик при промахе
-        y: this.ballMissed ? -100 : (this.gameState.ball.y / this.CANVAS_HEIGHT) * 100,
+        x: (this.gameState.ball.x / this.CANVAS_WIDTH) * 100,
+        y: (this.gameState.ball.y / this.CANVAS_HEIGHT) * 100,
       },
       paddles: {
         left: (this.gameState.paddles.left / this.CANVAS_HEIGHT) * 100,
@@ -173,8 +170,6 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   }
 
   private updateGameState(delta: number) {
-    if (this.ballMissed) return; // Пропускаем обновление шарика, если он "исчез"
-
     this.gameState.ball.x += this.gameState.ball.dx * (delta / 16);
     this.gameState.ball.y += this.gameState.ball.dy * (delta / 16);
 
@@ -195,28 +190,14 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     if (this.gameState.ball.x <= 0) {
       this.gameState.score.right++;
       this.server.emit('scoreUpdate', this.gameState.score);
-      this.handleBallMiss('right');
+      this.resetBall('right');
+      console.log('Ball reset after miss: right scored');
     } else if (this.gameState.ball.x >= this.CANVAS_WIDTH) {
       this.gameState.score.left++;
       this.server.emit('scoreUpdate', this.gameState.score);
-      this.handleBallMiss('left');
+      this.resetBall('left');
+      console.log('Ball reset after miss: left scored');
     }
-  }
-
-  private handleBallMiss(direction: 'left' | 'right') {
-    this.ballMissed = true;
-    this.server.emit('ballMissed', { direction });
-    console.log(`Ball missed, direction: ${direction}`);
-
-    setTimeout(() => {
-      this.resetBall(direction);
-      this.ballMissed = false;
-      this.server.emit('gameState', {
-        ...this.getNormalizedGameState(),
-        serverTime: Date.now(),
-      });
-      console.log('Ball reset after delay');
-    }, this.BALL_RESET_DELAY);
   }
 
   private checkPaddleCollision(side: 'left' | 'right'): boolean {
