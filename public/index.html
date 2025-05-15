@@ -78,8 +78,8 @@
           const PADDLE_HEIGHT = 100;
           const PADDLE_WIDTH = 15;
           const BALL_RADIUS = 10;
-          const INTERPOLATION_FACTOR = 0.3; // Увеличено для плавности
-          const SEND_THRESHOLD = 0.2; // Уменьшено для частой отправки
+          const INTERPOLATION_FACTOR = 0.3;
+          const SEND_THRESHOLD = 0.2;
 
           const canvas = document.getElementById('gameCanvas');
           const ctx = canvas.getContext('2d');
@@ -93,15 +93,16 @@
           let score = { left: 0, right: 0 };
           let lastSentPos = 0;
           let lastServerState = null;
+          let ballVisible = true;
 
           let keys = { ArrowUp: false, ArrowDown: false };
           let paddleVelocity = 0;
-          const ACCELERATION = 0.5;
-          const FRICTION = 0.9;
-          const MAX_SPEED = 8;
+          const ACCELERATION = 1;
+          const FRICTION = 0.85;
+          const MAX_SPEED = 14;
 
           const socket = io('https://pong-n66q.onrender.com/', {
-            transports: ['websocket', 'polling'], // Поддержка обоих транспортов
+            transports: ['websocket', 'polling'],
           });
           setInterval(() => {
             socket.emit('ping', Date.now());
@@ -168,8 +169,14 @@
             playerPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
             opponentPaddle = CANVAS_HEIGHT / 2 - PADDLE_HEIGHT / 2;
             score = { left: 0, right: 0 };
+            ballVisible = true;
             document.getElementById('score').textContent = '0 : 0';
             console.log('Game reset on client');
+          });
+
+          socket.on('ballMissed', ({ direction }) => {
+            ballVisible = false;
+            console.log(`Ball missed, direction: ${direction}`);
           });
 
           socket.on('pong', (clientTime) => {
@@ -201,7 +208,7 @@
           });
 
           function update() {
-            if (!playerSide) return; // Блокируем управление для зрителей
+            if (!playerSide) return;
 
             if (keys.ArrowUp) paddleVelocity -= ACCELERATION;
             if (keys.ArrowDown) paddleVelocity += ACCELERATION;
@@ -244,13 +251,23 @@
             ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
             ctx.fillStyle = '#FFF';
-            ctx.fillRect(20, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
-            ctx.fillRect(CANVAS_WIDTH - 35, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT);
+            if (playerSide === 'left') {
+              ctx.fillRect(20, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT); // Игрок слева
+              ctx.fillRect(CANVAS_WIDTH - 35, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT); // Противник справа
+            } else if (playerSide === 'right') {
+              ctx.fillRect(CANVAS_WIDTH - 35, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT); // Игрок справа
+              ctx.fillRect(20, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT); // Противник слева
+            } else {
+              ctx.fillRect(20, opponentPaddle, PADDLE_WIDTH, PADDLE_HEIGHT); // Зритель: левая ракетка
+              ctx.fillRect(CANVAS_WIDTH - 35, playerPaddle, PADDLE_WIDTH, PADDLE_HEIGHT); // Зритель: правая ракетка
+            }
 
-            ctx.beginPath();
-            ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
-            ctx.fillStyle = 'red';
-            ctx.fill();
+            if (ballVisible) {
+              ctx.beginPath();
+              ctx.arc(ball.x, ball.y, BALL_RADIUS, 0, Math.PI * 2);
+              ctx.fillStyle = 'red';
+              ctx.fill();
+            }
 
             ctx.setLineDash([10, 10]);
             ctx.beginPath();
